@@ -1,0 +1,141 @@
+---
+title: "PML Project"
+author: "AS"
+date: "12/08/2019"
+output:
+  html_document: default
+---
+
+
+## loading the packages and data
+
+```{r message=FALSE, warning=FALSE}
+library(caret)
+library(RColorBrewer)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+library(devtools)
+library(randomForest)
+library(gbm)
+library(corrplot)
+library(e1071)
+```
+
+## Reading and cleaning the data
+
+```{r}
+trainData <- read.csv('./pml-training.csv', header=T)
+testData <- read.csv('./pml-testing.csv', header=T)
+dim(trainData)
+dim(testData)
+head(trainData[1:5,1:20])
+head(testData[1:5,1:5])
+```
+
+
+## removing columns with missing values
+
+```{r}
+trainDataF<- trainData[, colSums(is.na(trainData)) == 0]
+testDataF <- testData[, colSums(is.na(testData)) == 0]
+dim(trainDataF)
+dim(testDataF)
+```
+
+## removing first seven variables as they little impact in outcome classe
+
+```{r}
+trainDataF <- trainDataF[, -c(1:7)]
+testDataF  <- testDataF[, -c(1:7)]
+dim(trainDataF)
+dim(testDataF)
+
+```
+
+## splitting training sets in to 70 and 30 
+```{r}
+set.seed(1234) 
+inTrain    <- createDataPartition(trainDataF$classe, p = 0.7, list = FALSE)
+trainData2 <- trainDataF[inTrain, ]
+testData2  <- trainDataF[-inTrain, ]
+dim(trainData2)
+dim(testData2)
+```
+
+## removing variable with near zero variance
+```{r}
+ZV <- nearZeroVar(trainData2)
+trainData2 <- trainData2[, -ZV]
+testData2  <- testData2[, -ZV]
+dim(trainData2)
+dim(testData2)
+```
+
+
+## finding the variable whhich are highly correlated
+
+```{r}
+cor_mat <- cor(trainData2[, -53])
+highlyCor= findCorrelation(cor_mat, cutoff=0.75)
+names(trainData2)[highlyCor]
+```
+
+
+## Building the model for prediction; We will try decision tree, random forest and GBM
+
+```{r}
+
+set.seed(12345)
+dTreeMod1 <- rpart(classe ~ ., data=trainData2, method="class")
+fancyRpartPlot(dTreeMod1)
+```
+
+## Decision tree based prediction
+
+```{r}
+predictTreeMod1 <- predict(dTreeMod1, testData2, type = "class")
+cmtree <- confusionMatrix(predictTreeMod1, testData2$classe)
+cmtree
+plot(cmtree$table, col = cmtree$byClass, 
+     main = paste("Decision Tree - Accuracy =", round(cmtree$overall['Accuracy'], 4)))
+```
+
+
+## Random forest based model
+```{r}
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modRF1    <- train(classe ~ ., data=trainData2, method="rf", trControl=controlRF)
+modRF1$finalModel
+```
+
+## Predict with Random Forest
+```{r}
+predictRF1 <- predict(modRF1, newdata=testData2)
+cmrf <- confusionMatrix(predictRF1, testData2$classe)
+cmrf
+plot(modRF1)
+plot(cmrf$table, col = cmrf$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+```
+
+
+## Build and predict with GBM
+```{r}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modGBM  <- train(classe ~ ., data=trainData2, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modGBM$finalModel
+
+print(modGBM)
+
+predictGBM <- predict(modGBM, newdata=testData2)
+cmGBM <- confusionMatrix(predictGBM, testData2$classe)
+cmGBM
+
+```
+
+## Applying on final set using Random forest as it has highest accuracy
+```{r}
+Results <- predict(modRF1, newdata=testDataF )
+Results
+```
